@@ -1,0 +1,25 @@
+import ifcopenshell
+
+# IFC 파일 열기
+ifc_file = ifcopenshell.open("beam_column.ifc")
+
+# 특정 빔 요소 찾기
+beam = ifc_file.by_type("IfcBeam")[0]
+
+# DocumentReference 생성
+doc_ref = ifc_file.create_entity(
+    "IfcDocumentReference",
+    Location="https://example.com/analysis_results/beam_response_graph.png",
+    Description="모드형상 응답 그래프"
+)
+
+# 빔에 문서 참조 연결
+rel = ifc_file.create_entity(
+    "IfcRelAssociatesDocument",
+    GlobalId=ifcopenshell.guid.new(),
+    RelatedObjects=[beam],
+    RelatingDocument=doc_ref
+)
+
+# 수정된 IFC 파일 저장
+ifc_file.write("beam_column_with_refs.ifc")
