@@ -1,0 +1,97 @@
+import ifcopenshell
+import csv
+
+# 1. 파일 경로 설정
+IFC_PATH = "beam_column.ifc"
+CSV_PATH = "results.csv"
+OUT_PATH = "beam_column_with_results.ifc"
+
+# 2. IFC 파일 열기
+ifc = [ifcopenshell.open](http://ifcopenshell.open)(IFC_PATH)
+
+# 3. CSV 읽기 함수 (기본 문법 버전)
+def load_results(csv_path):
+    results = {}
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            element_id = row["element_id"]
+            # 단위 변환: mm → m (IFC는 보통 m 단위)
+            max_disp_m = float(row["MaxDisplacement_mm"]) / 1000.0
+            max_moment = float(row["MaxMoment_kNm"])
+            max_shear = float(row["MaxShear_kN"])
+            freq = float(row["ModeShape1_Frequency_Hz"])
+
+            results[element_id] = {
+                "MaxDisplacement": max_disp_m,
+                "MaxMoment": max_moment,
+                "MaxShear": max_shear,
+                "ModeShape1_Frequency": freq,
+            }
+    return results
+
+results = load_results(CSV_PATH)
+
+# 4. 부재 찾는 간단한 함수 (여기선 Tag를 element_id로 쓴다고 가정)
+def find_element_by_id(ifc, element_id):
+    # IfcBeam + IfcColumn 둘 다 뒤져보기
+    for cls in ["IfcBeam", "IfcColumn"]:
+        for e in [ifc.by](http://ifc.by)_type(cls):
+            # e.Tag 또는 [e.Name](http://e.Name)에 element_id가 들어있다고 가정
+            if getattr(e, "Tag", None) == element_id:
+                return e
+            if getattr(e, "Name", None) == element_id:
+                return e
+    return None
+
+# 5. Pset 추가 함수 (IfcOpenShell의 유틸을 직접 쓰지 않고, 가장 단순하게 작성)
+def create_pset(ifc, element, values_dict):
+    # 새 PropertySet 번호 만들기
+    new_id = ifc.create_entity
+
+    # 개별 Property 생성
+    props = []
+    for key, val in values_dict.items():
+        prop = ifc.create_entity(
+            "IfcPropertySingleValue",
+            Name=key,
+            Description=None,
+            NominalValue=ifcopenshell.entity_instance.double(val),
+            Unit=None,
+        )
+        props.append(prop)
+
+    # PropertySet 생성
+    pset = ifc.create_entity(
+        "IfcPropertySet",
+        GlobalId=[ifcopenshell.guid.new](http://ifcopenshell.guid.new)(),
+        OwnerHistory=None,
+        Name="Pset_StructuralAnalysisResults",
+        Description=None,
+        HasProperties=props,
+    )
+
+    # RelDefinesByProperties 생성 (부재와 Pset 연결)
+    ifc.create_entity(
+        "IfcRelDefinesByProperties",
+        GlobalId=[ifcopenshell.guid.new](http://ifcopenshell.guid.new)(),
+        OwnerHistory=None,
+        Name=None,
+        Description=None,
+        RelatedObjects=[element],
+        RelatingPropertyDefinition=pset,
+    )
+
+# 6. 모든 해석 결과를 IFC에 반영
+for element_id, values in results.items():
+    elem = find_element_by_id(ifc, element_id)
+    if elem is None:
+        print(f"[경고] IFC에서 element_id={element_id} 부재를 못 찾음")
+        continue
+
+    print(f"[INFO] element_id={element_id} 에 Pset 추가")
+    create_pset(ifc, elem, values)
+
+# 7. 새 IFC 파일로 저장
+ifc.write(OUT_PATH)
+print(f"완료! {OUT_PATH} 로 저장됨")
